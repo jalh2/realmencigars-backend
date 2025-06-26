@@ -4,7 +4,7 @@ const {
   registerUser, 
   loginUser, 
   getUsers, 
-  updateUserType, 
+  updateUserAccess, 
   getStores,
   changePassword,
   deleteUser,
@@ -19,10 +19,10 @@ router.get('/stores', getStores);
 router.get('/stores/:store/users', getUsersByStore);
 
 // Protected routes (should be admin only)
-router.get('/users', getUsers);
-router.put('/users/:userId/type', updateUserType);
-router.put('/users/:userId/password', changePassword);
-router.delete('/users/:userId', deleteUser);
+router.get('/', getUsers);
+router.put('/:userId/access', updateUserAccess);
+router.put('/:userId/password', changePassword);
+router.delete('/:userId', deleteUser);
 router.delete('/stores/:store', deleteStore);
 
 module.exports = router;

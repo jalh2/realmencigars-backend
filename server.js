@@ -24,12 +24,17 @@ require('./models/Transaction');
 require('./models/User');
 require('./models/CurrencyRate');
 require('./models/Credit');
+require('./models/Expense');
+require('./models/Employee');
 const productRoutes = require('./routes/productRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
 const userRoutes = require('./routes/userRoutes');
 const currencyRateRoutes = require('./routes/currencyRateRoutes');
 const creditRoutes = require('./routes/creditRoutes');
+const expenseRoutes = require('./routes/expenseRoutes');
 const syncRoutes = require('./routes/syncRoutes');
+const vipRoutes = require('./routes/vipRoutes');
+const employeeRoutes = require('./routes/employeeRoutes');
 
 
   const app = express();
@@ -87,7 +92,10 @@ const syncRoutes = require('./routes/syncRoutes');
   app.use('/api/users', userRoutes);
   app.use('/api/currency-rate', currencyRateRoutes);
   app.use('/api/credits', creditRoutes);
+  app.use('/api/expenses', expenseRoutes);
   app.use('/api/sync', syncRoutes);
+  app.use('/api/vips', vipRoutes);
+  app.use('/api/employees', employeeRoutes);
 
   // Health check endpoint (critical for Electron integration)
   app.get('/api/health', (req, res) => {

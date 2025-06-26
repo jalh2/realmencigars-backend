@@ -1,7 +1,7 @@
 {
-  "name": "floanprovision-backend",
+  "name": "realmencigars-backend",
   "version": "1.0.0",
-  "description": "Backend for Floan Provision Inventory Management System",
+  "description": "Backend for Real Men Cigars Inventory Management System",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

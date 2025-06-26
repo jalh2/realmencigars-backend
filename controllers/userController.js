@@ -3,7 +3,7 @@ const crypto = require('crypto');
 
 const registerUser = async (req, res) => {
   try {
-    const { username, password, userType, store } = req.body;
+    const { username, password, accessibleRoutes, store } = req.body;
 
     // Check if user already exists in the same store
     const existingUser = await User.findOne({ username, store });
@@ -15,7 +15,7 @@ const registerUser = async (req, res) => {
     const user = new User({
       username,
       password,
-      userType: userType || 'employee',
+      accessibleRoutes: accessibleRoutes || [],
       store
     });
 
@@ -37,7 +37,7 @@ const registerUser = async (req, res) => {
               username,
               password: user.password,
               salt: user.salt,
-              userType: user.userType || 'employee',
+              accessibleRoutes: user.accessibleRoutes || [],
               store,
               createdAt: new Date()
             });
@@ -45,7 +45,7 @@ const registerUser = async (req, res) => {
             // Return the created user
             return res.status(201).json({ 
               username: username,
-              userType: userType || 'employee',
+              accessibleRoutes: accessibleRoutes || [],
               store: store
             });
           } else {
@@ -63,7 +63,7 @@ const registerUser = async (req, res) => {
 
     res.status(201).json({ 
       username: user.username,
-      userType: user.userType,
+      accessibleRoutes: user.accessibleRoutes,
       store: user.store
     });
   } catch (error) {
@@ -90,7 +90,7 @@ const loginUser = async (req, res) => {
 
     res.json({ 
       username: user.username,
-      userType: user.userType,
+      accessibleRoutes: user.accessibleRoutes,
       store: user.store
     });
   } catch (error) {
@@ -100,25 +100,25 @@ const loginUser = async (req, res) => {
 
 const getUsers = async (req, res) => {
   try {
-    const users = await User.find({}, 'username userType store');
+    const users = await User.find({}, 'username accessibleRoutes store');
     res.json(users);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
-const updateUserType = async (req, res) => {
+const updateUserAccess = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { userType } = req.body;
+    const { accessibleRoutes } = req.body;
 
-    if (!['admin', 'employee'].includes(userType)) {
-      return res.status(400).json({ error: 'Invalid user type' });
+    if (!Array.isArray(accessibleRoutes)) {
+      return res.status(400).json({ error: 'accessibleRoutes must be an array' });
     }
 
     const user = await User.findByIdAndUpdate(
       userId,
-      { userType },
+      { accessibleRoutes },
       { new: true, runValidators: true }
     );
 
@@ -128,7 +128,7 @@ const updateUserType = async (req, res) => {
 
     res.json({
       username: user.username,
-      userType: user.userType,
+      accessibleRoutes: user.accessibleRoutes,
       store: user.store
     });
   } catch (error) {
@@ -218,7 +218,7 @@ module.exports = {
   registerUser,
   loginUser,
   getUsers,
-  updateUserType,
+  updateUserAccess,
   getStores,
   changePassword,
   deleteUser,

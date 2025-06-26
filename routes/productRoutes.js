@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { createProduct, getProducts, getProductById, updateProduct, deleteProduct, deleteAllProducts, getInventorySummary, bulkUpdateProducts } = require('../controllers/productController');
+const { createProduct, getProducts, getProductById, updateProduct, deleteProduct, deleteAllProducts, getInventorySummary, bulkUpdateProducts, bulkCreateProducts } = require('../controllers/productController');
 const upload = require('../middleware/upload');
 
 // Product routes will be added here
@@ -19,6 +19,9 @@ router.post('/', upload.single('image'), createProduct);
 
 // Bulk update products from Excel upload
 router.post('/bulk-update', bulkUpdateProducts);
+
+// Bulk create products from Excel upload
+router.post('/bulk-create', bulkCreateProducts);
 
 // Update a product with optional image upload
 router.put('/:id', upload.single('image'), updateProduct);

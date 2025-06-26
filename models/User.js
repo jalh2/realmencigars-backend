@@ -39,12 +39,9 @@ const userSchema = new mongoose.Schema({
   salt: {
     type: String
   },
-  userType: {
-    type: String,
-    enum: ['admin', 'employee'],
-    required: true,
-    default: 'employee'
-  },
+  accessibleRoutes: [{
+    type: String
+  }],
   store: {
     type: String,
     required: true,

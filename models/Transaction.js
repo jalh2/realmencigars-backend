@@ -3,12 +3,14 @@ const mongoose = require('mongoose');
 const transactionSchema = new mongoose.Schema({
   date: { type: Date, default: Date.now },
   type: { type: String, enum: ['sale', 'restock', 'return'], default: 'sale' },
+  saleCategory: { type: String, enum: ['product', 'vip_membership'], default: 'product' },
   store: {
     type: String,
     required: true,
     trim: true
   },
   currency: { type: String, required: true, enum: ['LRD', 'USD', 'BOTH', 'CREDIT'], default: 'LRD' },
+  paymentMethod: { type: String, enum: ['Cash', 'POS', 'Mobile Money'], default: 'Cash' },
   customerName: {
     type: String,
     trim: true
