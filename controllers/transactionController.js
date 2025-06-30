@@ -43,15 +43,13 @@ const createTransaction = async (req, res) => {
       if (!product) {
         return res.status(404).json({ error: `Product ${item.product} not found in store ${store}` });
       }
-      if (product.pieces < item.quantity) {
+      if (product.quantityInStock < item.quantity) {
         return res.status(400).json({ error: `Insufficient quantity for product ${product.item}` });
       }
 
       // Update product quantity
-      await Product.findByIdAndUpdate(
-        item.product,
-        { $inc: { pieces: -item.quantity } }
-      );
+      product.quantityInStock -= item.quantity;
+      await product.save();
 
       // Add enhanced product information
       enhancedProductsSold.push({
