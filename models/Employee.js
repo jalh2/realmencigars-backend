@@ -10,6 +10,31 @@ const employeeSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  position: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  payGrade: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  email: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    match: [/^[\w-]+(?:\.[\w-]+)*@(?:[\w-]+\.)+[a-zA-Z]{2,7}$/, 'Please fill a valid email address'],
+    required: false // Optional
+  },
+  overtimeRate: {
+    type: Number,
+    default: 1.5
+  },
+  overtimeHours: {
+    type: Number,
+    default: 0
+  },
   workHistory: [{
     clockInTime: { type: Date, required: true },
     clockOutTime: { type: Date }

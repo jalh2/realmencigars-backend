@@ -47,6 +47,26 @@ const transactionSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  vipCigarDiscountAmountLRD: {
+    type: Number,
+    default: 0
+  },
+  vipCigarDiscountAmountUSD: {
+    type: Number,
+    default: 0
+  },
+  vipCreditUsedLRD: {
+    type: Number,
+    default: 0
+  },
+  vipCreditUsedUSD: {
+    type: Number,
+    default: 0
+  },
+  newVipCigarsDiscountedCount: {
+    type: Number,
+    default: 0
+  },
   amountReceivedLRD: {
     type: Number,
     required: function() { return (this.currency === 'LRD' || this.currency === 'BOTH') && this.currency !== 'CREDIT'; },

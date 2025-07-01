@@ -1,5 +1,6 @@
 const Transaction = require('../models/Transaction');
 const Product = require('../models/Product');
+const Vip = require('../models/Vip');
 const Expense = require('../models/Expense');
 
 // Transaction controller methods will be added here
@@ -16,15 +17,21 @@ const createTransaction = async (req, res) => {
       amountReceivedUSD,
       change,
       changeCurrency,
-      totalLRD,
-      totalUSD,
       currencyRate,
       customerName, // Added for credit transactions
       // New discount fields
       discountType,
       discountValue,
       discountAmount,
-      subtotal
+      subtotal,
+      // New VIP fields from frontend
+      vipCigarDiscountAmountLRD,
+      vipCigarDiscountAmountUSD,
+      vipCreditUsedLRD,
+      vipCreditUsedUSD,
+      remainingVipCreditLRD,
+      remainingVipCreditUSD,
+      newVipCigarsDiscountedCount
     } = req.body;
 
     if (!store) {
@@ -34,10 +41,22 @@ const createTransaction = async (req, res) => {
     // Use the provided currency rate or default to 197 if not provided
     const EXCHANGE_RATE = currencyRate || 197;
 
-    // Enhanced products with names and prices
-    const enhancedProductsSold = [];
+    let vipCustomer = null;
+    if (customerName) {
+      vipCustomer = await Vip.findOne({ name: customerName });
+      // Update VIP's monthlyCredit and cigarsDiscountCount based on frontend calculations
+      if (vipCustomer) {
+        vipCustomer.monthlyCredit = remainingVipCreditUSD; // Frontend sends remaining credit in USD
+        vipCustomer.cigarsDiscountCount = newVipCigarsDiscountedCount;
+        await vipCustomer.save();
+      }
+    }
 
-    // Validate products and update inventory
+    // Enhanced products with names and prices, applying VIP cigar discount
+    const enhancedProductsSold = [];
+    let calculatedTotalLRD = 0;
+    let calculatedTotalUSD = 0;
+
     for (const item of productsSold) {
       const product = await Product.findOne({ _id: item.product, store });
       if (!product) {
@@ -47,6 +66,21 @@ const createTransaction = async (req, res) => {
         return res.status(400).json({ error: `Insufficient quantity for product ${product.item}` });
       }
 
+      let itemSellingPriceLRD = product.sellingPriceLRD;
+      let itemSellingPriceUSD = product.sellingPriceUSD;
+
+      // Apply 20% discount for VIP cigar purchases (first 10 cigars)
+      if (vipCustomer && vipCustomer.membershipStatus === 'active' && 
+          product.category && product.category.toLowerCase() === 'cigar' && 
+          vipCustomer.cigarsDiscountCount < 10) {
+        
+        const discountPercentage = 0.20; // 20% discount
+        itemSellingPriceLRD = product.sellingPriceLRD * (1 - discountPercentage);
+        itemSellingPriceUSD = product.sellingPriceUSD * (1 - discountPercentage);
+        // Only increment if the discount is actually applied for this item
+        vipCustomer.cigarsDiscountCount += item.quantity;
+      }
+
       // Update product quantity
       product.quantityInStock -= item.quantity;
       await product.save();
@@ -54,21 +88,43 @@ const createTransaction = async (req, res) => {
       // Add enhanced product information
       enhancedProductsSold.push({
         ...item,
-        productName: product.productName, // Correct field for product name
+        productName: product.productName,
         priceAtSale: {
-          USD: product.sellingPriceUSD, // Correct field for USD price
-          LRD: product.sellingPriceLRD  // Correct field for LRD price
+          USD: itemSellingPriceUSD,
+          LRD: itemSellingPriceLRD
         }
       });
+
+      calculatedTotalLRD += itemSellingPriceLRD * item.quantity;
+      calculatedTotalUSD += itemSellingPriceUSD * item.quantity;
+    }
+
+    // Apply monthly credit for VIP customers
+    if (vipCustomer && vipCustomer.monthlyCredit > 0) {
+      // Convert USD total to LRD for consistent credit application
+      const totalInLRDForCredit = calculatedTotalLRD + (calculatedTotalUSD * EXCHANGE_RATE);
+      let creditToApplyLRD = Math.min(totalInLRDForCredit, vipCustomer.monthlyCredit * EXCHANGE_RATE); // Convert credit to LRD
+
+      vipCustomer.monthlyCredit -= (creditToApplyLRD / EXCHANGE_RATE); // Deduct credit in USD equivalent
+      calculatedTotalLRD -= creditToApplyLRD;
+
+      // Ensure totals don't go below zero
+      if (calculatedTotalLRD < 0) {
+        calculatedTotalUSD += (calculatedTotalLRD / EXCHANGE_RATE); // Adjust USD if LRD goes negative
+        calculatedTotalLRD = 0;
+      }
+      if (calculatedTotalUSD < 0) {
+        calculatedTotalUSD = 0;
+      }
     }
 
     // Validate payment information based on currency
     if (currency === 'LRD') {
-      if (typeof amountReceivedLRD !== 'number' || amountReceivedLRD < totalLRD) {
+      if (typeof amountReceivedLRD !== 'number' || amountReceivedLRD < calculatedTotalLRD) {
         return res.status(400).json({ error: 'Amount received in LRD must be greater than or equal to the total' });
       }
     } else if (currency === 'USD') {
-      if (typeof amountReceivedUSD !== 'number' || amountReceivedUSD < totalUSD) {
+      if (typeof amountReceivedUSD !== 'number' || amountReceivedUSD < calculatedTotalUSD) {
         return res.status(400).json({ error: 'Amount received in USD must be greater than or equal to the total' });
       }
     } else if (currency === 'BOTH') {
@@ -79,7 +135,7 @@ const createTransaction = async (req, res) => {
       // Check if combined payment is sufficient using the dynamic exchange rate
       const totalPaymentValueLRD = amountReceivedLRD + (amountReceivedUSD * EXCHANGE_RATE);
       
-      if (totalPaymentValueLRD < totalLRD) {
+      if (totalPaymentValueLRD < calculatedTotalLRD) {
         return res.status(400).json({ error: 'Combined payment amount is insufficient' });
       }
     } else if (currency === 'CREDIT') {
@@ -99,13 +155,21 @@ const createTransaction = async (req, res) => {
       amountReceivedLRD: currency === 'CREDIT' ? 0 : (currency === 'USD' ? 0 : amountReceivedLRD),
       amountReceivedUSD: currency === 'CREDIT' ? 0 : (currency === 'LRD' ? 0 : amountReceivedUSD),
       change: currency === 'CREDIT' ? 0 : change,
-      totalLRD: totalLRD || 0,
-      totalUSD: totalUSD || 0,
+      totalLRD: calculatedTotalLRD,
+      totalUSD: calculatedTotalUSD,
       // Add discount information
       discountType: discountType || 'none',
       discountValue: discountValue || 0,
       discountAmount: discountAmount || 0,
-      subtotal: subtotal || 0
+      subtotal: subtotal || 0, // This subtotal might need recalculation based on discounts
+      // VIP specific transaction details
+      vipCigarDiscountAmountLRD: vipCigarDiscountAmountLRD || 0,
+      vipCigarDiscountAmountUSD: vipCigarDiscountAmountUSD || 0,
+      vipCreditUsedLRD: vipCreditUsedLRD || 0,
+      vipCreditUsedUSD: vipCreditUsedUSD || 0,
+      newVipCigarsDiscountedCount: newVipCigarsDiscountedCount || 0,
+      // If VIP customer, include their updated credit and cigar count
+      ...(vipCustomer && { monthlyCredit: vipCustomer.monthlyCredit, cigarsDiscountCount: vipCustomer.cigarsDiscountCount })
     };
 
     // Only include changeCurrency for non-credit transactions
@@ -116,6 +180,11 @@ const createTransaction = async (req, res) => {
     const transaction = new Transaction(transactionData);
 
     await transaction.save();
+
+    // Save updated VIP customer data if applicable
+    if (vipCustomer) {
+      await vipCustomer.save();
+    }
 
     if (transaction.currency === 'CREDIT') {
       const creditProductsSold = enhancedProductsSold.map(p => ({

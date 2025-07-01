@@ -14,8 +14,8 @@ const getEmployeesByStore = async (req, res) => {
 // Add a new employee
 const addEmployee = async (req, res) => {
   try {
-    const { name, payRate, store } = req.body;
-    const newEmployee = new Employee({ name, payRate, store });
+    const { name, payRate, store, position, payGrade, email, overtimeRate, overtimeHours } = req.body;
+    const newEmployee = new Employee({ name, payRate, store, position, payGrade, email, overtimeRate, overtimeHours });
     await newEmployee.save();
     res.status(201).json(newEmployee);
   } catch (error) {
@@ -91,8 +91,8 @@ const payEmployee = async (req, res) => {
 const updateEmployee = async (req, res) => {
   try {
     const { employeeId } = req.params;
-    const { name, payRate } = req.body;
-    const employee = await Employee.findByIdAndUpdate(employeeId, { name, payRate }, { new: true });
+    const { name, payRate, position, payGrade, email, overtimeRate, overtimeHours } = req.body;
+    const employee = await Employee.findByIdAndUpdate(employeeId, { name, payRate, position, payGrade, email, overtimeRate, overtimeHours }, { new: true });
     if (!employee) {
       return res.status(404).json({ error: 'Employee not found' });
     }

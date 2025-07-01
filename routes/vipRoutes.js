@@ -7,4 +7,10 @@ router.route('/')
   .post(vipController.createVip)
   .get(vipController.getVips);
 
+router.route('/:id/renew')
+  .put(vipController.renewVip);
+
+router.route('/update-statuses')
+  .put(vipController.updateVipStatuses);
+
 module.exports = router;

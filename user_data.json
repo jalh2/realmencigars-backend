@@ -1,6 +1,6 @@
 {
   "username":"admin1",
   "password":"936434234",
-  "accessibleRoutes": ["System", "Cashier", "Reports", "Expenses", "VIPS", "Products", "Credit", "Employees", "EmployeeManagement", "Inventory", "Back In Stock", "UserAccess", "Data Sync", "Settings", "CurrencySettings"],
+  "accessibleRoutes": ["System", "Cashier", "Reports", "Expenses", "VIPS", "Products", "Credit", "Employees", "EmployeeManagement", "Inventory List", "Back In Stock", "UserAccess", "Data Sync", "Settings", "CurrencySettings"],
   "store":"RMC Liberia"
 }

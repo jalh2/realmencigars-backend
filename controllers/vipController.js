@@ -5,20 +5,26 @@ const Transaction = require('../models/Transaction');
 // @route   POST /api/vips
 // @access  Private/Admin
 const createVip = async (req, res) => {
-  const { name, store, membershipFee, membershipDuration, currency, amountReceivedLRD, amountReceivedUSD } = req.body;
+  const { name, store, currency, amountReceivedLRD, amountReceivedUSD } = req.body;
+
+  // Fixed exchange rate for now. In a real application, this would come from a dynamic source.
+  const USD_TO_LRD_RATE = 170;
+  const registrationFeeUSD = 25; // Fixed at $25 USD
+  const registrationFeeLRD = registrationFeeUSD * USD_TO_LRD_RATE;
+
+  // Auto-generate memberId (simple timestamp-based for now)
+  const memberId = `VIP-${Date.now()}`;
+  const registrationFee = registrationFeeLRD; // Use the converted LRD value as the registrationFee
 
   try {
     // Calculate expiry date
     const signupDate = new Date();
     let expiryDate = new Date(signupDate);
-    const duration = parseInt(membershipDuration.slice(0, -1));
-    const unit = membershipDuration.slice(-1);
-
-    if (unit === 'm') {
-      expiryDate.setMonth(expiryDate.getMonth() + duration);
-    } else if (unit === 'y') {
-      expiryDate.setFullYear(expiryDate.getFullYear() + duration);
-    }
+    const lastPaymentDate = signupDate;
+    let nextDueDate = new Date(signupDate);
+    nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+    // Membership is always 1 month
+    expiryDate.setMonth(expiryDate.getMonth() + 1);
 
     // Create a sales transaction for the VIP membership
     const transaction = new Transaction({
@@ -26,8 +32,8 @@ const createVip = async (req, res) => {
       type: 'sale',
       saleCategory: 'vip_membership',
       customerName: name,
-      totalLRD: currency === 'LRD' ? membershipFee : 0,
-      totalUSD: currency === 'USD' ? membershipFee : 0,
+      totalLRD: currency === 'LRD' ? registrationFee : 0,
+      totalUSD: currency === 'USD' ? registrationFeeUSD : 0,
       currency,
       amountReceivedLRD,
       amountReceivedUSD,
@@ -40,11 +46,18 @@ const createVip = async (req, res) => {
     const newVip = new Vip({
       name,
       store,
-      membershipFee,
       signupDate,
-      membershipDuration,
+      membershipDuration: '1m',
       expiryDate,
-      transactionId: savedTransaction._id
+      transactionId: savedTransaction._id,
+      memberId,
+      registrationFee,
+      lastPaymentDate,
+      nextDueDate,
+      membershipStatus: 'active',
+      unpaidMonths: 0,
+      monthlyCredit: 100,
+      cigarsDiscountCount: 0
     });
 
     const savedVip = await newVip.save();
@@ -67,4 +80,107 @@ const getVips = async (req, res) => {
   }
 };
 
-module.exports = { createVip, getVips };
+
+// @desc    Renew a VIP member's membership
+// @route   PUT /api/vips/:id/renew
+// @access  Private/Admin
+const renewVip = async (req, res) => {
+  const { id } = req.params;
+  const { currency, amountReceivedLRD, amountReceivedUSD } = req.body; // Assuming payment details are sent
+
+  // Fixed exchange rate for now. In a real application, this would come from a dynamic source.
+  const USD_TO_LRD_RATE = 170;
+  const registrationFeeUSD = 25; // Fixed at $25 USD
+  const registrationFeeLRD = registrationFeeUSD * USD_TO_LRD_RATE;
+  const registrationFee = registrationFeeLRD; // Use the converted LRD value as the registrationFee
+
+  try {
+    const vip = await Vip.findById(id);
+
+    if (!vip) {
+      return res.status(404).json({ error: 'VIP member not found' });
+    }
+
+    // Check if the VIP is disabled, if so, they need to re-register
+    if (vip.membershipStatus === 'disabled') {
+      return res.status(400).json({ error: 'Disabled VIP members must re-register' });
+    }
+
+    // Update lastPaymentDate and nextDueDate
+    vip.lastPaymentDate = new Date();
+    vip.nextDueDate.setMonth(vip.nextDueDate.getMonth() + 1);
+    vip.unpaidMonths = 0; // Reset unpaid months on successful renewal
+    vip.membershipStatus = 'active'; // Set status to active on successful renewal
+    vip.monthlyCredit += 100; // Add $100 to monthly credit with rollover
+    vip.cigarsDiscountCount = 0; // Reset discounted cigars count on renewal
+
+    // Create a sales transaction for the VIP membership renewal
+    const transaction = new Transaction({
+      store: vip.store,
+      type: 'sale',
+      saleCategory: 'vip_membership_renewal',
+      customerName: vip.name,
+      totalLRD: currency === 'LRD' ? registrationFee : 0,
+      totalUSD: currency === 'USD' ? registrationFeeUSD : 0,
+      currency,
+      amountReceivedLRD,
+      amountReceivedUSD,
+      productsSold: [] // No physical products for VIP membership renewal
+    });
+
+    const savedTransaction = await transaction.save();
+
+    vip.transactionId = savedTransaction._id; // Update transaction ID
+
+    const updatedVip = await vip.save();
+
+    res.json(updatedVip);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+
+// @desc    Update VIP membership statuses (dormant/disabled)
+// @route   PUT /api/vips/update-statuses
+// @access  Private/Admin (should be called by a scheduled task)
+const updateVipStatuses = async (req, res) => {
+  try {
+    const vips = await Vip.find({});
+    const today = new Date();
+
+    for (const vip of vips) {
+      if (vip.membershipStatus === 'disabled') {
+        continue; // Disabled members require new registration, no automatic changes
+      }
+
+      let unpaidMonths = 0;
+      let currentDueDate = new Date(vip.nextDueDate);
+
+      // Calculate unpaid months
+      while (currentDueDate < today) {
+        unpaidMonths++;
+        currentDueDate.setMonth(currentDueDate.getMonth() + 1);
+      }
+
+      if (unpaidMonths > 0) {
+        vip.unpaidMonths = unpaidMonths;
+        if (unpaidMonths >= 6) {
+          vip.membershipStatus = 'disabled';
+        } else if (unpaidMonths >= 3) {
+          vip.membershipStatus = 'dormant';
+        }
+      } else {
+        vip.unpaidMonths = 0;
+        vip.membershipStatus = 'active'; // Should be active if no unpaid months
+      }
+      await vip.save();
+    }
+
+    res.status(200).json({ message: 'VIP statuses updated successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+module.exports = { createVip, getVips, renewVip, updateVipStatuses };
