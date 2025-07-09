@@ -5,16 +5,35 @@ const Transaction = require('../models/Transaction');
 // @route   POST /api/vips
 // @access  Private/Admin
 const createVip = async (req, res) => {
-  const { name, store, currency, amountReceivedLRD, amountReceivedUSD } = req.body;
+  const { name, store, currency, amountReceivedLRD, amountReceivedUSD, membershipTier } = req.body;
 
-  // Fixed exchange rate for now. In a real application, this would come from a dynamic source.
   const USD_TO_LRD_RATE = 170;
-  const registrationFeeUSD = 25; // Fixed at $25 USD
-  const registrationFeeLRD = registrationFeeUSD * USD_TO_LRD_RATE;
 
-  // Auto-generate memberId (simple timestamp-based for now)
+  let registrationFeeUSD = 25; // Base fee
+  let maxDiscountedCigars;
+
+  switch (membershipTier) {
+    case 'silver':
+      registrationFeeUSD += 50;
+      maxDiscountedCigars = 5;
+      break;
+    case 'gold':
+      registrationFeeUSD += 75;
+      maxDiscountedCigars = 7;
+      break;
+    case 'platinum':
+      registrationFeeUSD += 100;
+      maxDiscountedCigars = 10;
+      break;
+    default: // Should default to silver as per model
+      registrationFeeUSD += 50;
+      maxDiscountedCigars = 5;
+      break;
+  }
+
+  const registrationFeeLRD = registrationFeeUSD * USD_TO_LRD_RATE;
   const memberId = `VIP-${Date.now()}`;
-  const registrationFee = registrationFeeLRD; // Use the converted LRD value as the registrationFee
+  const registrationFee = registrationFeeLRD;
 
   try {
     // Calculate expiry date
@@ -57,7 +76,9 @@ const createVip = async (req, res) => {
       membershipStatus: 'active',
       unpaidMonths: 0,
       monthlyCredit: 100,
-      cigarsDiscountCount: 0
+      cigarsDiscountCount: 0,
+      membershipTier,
+      maxDiscountedCigars
     });
 
     const savedVip = await newVip.save();
@@ -86,13 +107,34 @@ const getVips = async (req, res) => {
 // @access  Private/Admin
 const renewVip = async (req, res) => {
   const { id } = req.params;
-  const { currency, amountReceivedLRD, amountReceivedUSD } = req.body; // Assuming payment details are sent
+  const { currency, amountReceivedLRD, amountReceivedUSD, membershipTier } = req.body; // Assuming payment details are sent
 
-  // Fixed exchange rate for now. In a real application, this would come from a dynamic source.
   const USD_TO_LRD_RATE = 170;
-  const registrationFeeUSD = 25; // Fixed at $25 USD
+  let registrationFeeUSD = 25; // Base fee
+  let maxDiscountedCigars;
+  const tier = membershipTier || vip.membershipTier; // Use new tier if provided, otherwise existing
+
+  switch (tier) {
+    case 'silver':
+      registrationFeeUSD += 50;
+      maxDiscountedCigars = 5;
+      break;
+    case 'gold':
+      registrationFeeUSD += 75;
+      maxDiscountedCigars = 7;
+      break;
+    case 'platinum':
+      registrationFeeUSD += 100;
+      maxDiscountedCigars = 10;
+      break;
+    default:
+      registrationFeeUSD += 50;
+      maxDiscountedCigars = 5;
+      break;
+  }
+
   const registrationFeeLRD = registrationFeeUSD * USD_TO_LRD_RATE;
-  const registrationFee = registrationFeeLRD; // Use the converted LRD value as the registrationFee
+  const registrationFee = registrationFeeLRD;
 
   try {
     const vip = await Vip.findById(id);
@@ -113,6 +155,8 @@ const renewVip = async (req, res) => {
     vip.membershipStatus = 'active'; // Set status to active on successful renewal
     vip.monthlyCredit += 100; // Add $100 to monthly credit with rollover
     vip.cigarsDiscountCount = 0; // Reset discounted cigars count on renewal
+    vip.membershipTier = tier;
+    vip.maxDiscountedCigars = maxDiscountedCigars;
 
     // Create a sales transaction for the VIP membership renewal
     const transaction = new Transaction({

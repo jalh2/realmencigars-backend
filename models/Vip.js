@@ -38,8 +38,13 @@ const vipSchema = new mongoose.Schema({
   },
   registrationFee: {
     type: Number,
-    required: true,
-    default: 25
+    required: true
+  },
+  membershipTier: {
+    type: String,
+    enum: ['silver', 'gold', 'platinum'],
+    default: 'silver',
+    required: true
   },
   membershipStatus: {
     type: String,
@@ -63,6 +68,10 @@ const vipSchema = new mongoose.Schema({
   cigarsDiscountCount: {
     type: Number,
     default: 0 // Count of cigars that received 20% discount
+  },
+  maxDiscountedCigars: {
+    type: Number,
+    default: 0 // Max number of cigars eligible for discount
   }
 });
 
