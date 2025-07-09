@@ -21,9 +21,8 @@ const productSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
-  image: { type: String },
-  createdAt: { type: Date, default: Date.now }
-});
+  image: { type: String }
+}, { timestamps: true });
 
 // Create a compound index for item and store to ensure unique items per store
 productSchema.index({ itemID: 1, store: 1 }, { unique: true });
