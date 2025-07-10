@@ -302,53 +302,46 @@ const deleteAllProducts = async (req, res) => {
 
 const getInventorySummary = async (req, res) => {
   try {
-    const store = req.query.store ? req.query.store.trim() : null;
+    const store = req.query.store;
     if (!store) {
       return res.status(400).json({ error: 'Store parameter is required' });
     }
 
-    // Fetch all data in parallel
-    const [products, transactions, pendingCredits] = await Promise.all([
-      Product.find({ store: { $regex: new RegExp(`^${store}$`, 'i') } }),
-      Transaction.find({ store, type: 'sale' }),
-      Credit.find({ store, status: 'Pending' })
+    const storeRegex = new RegExp(`^${store}$`, 'i');
+
+    const [inventorySummary, transactions, pendingCredits] = await Promise.all([
+      Product.aggregate([
+        { $match: { store: storeRegex } },
+        {
+          $group: {
+            _id: null,
+            totalInventoryValueLRD: { $sum: '$totalLRD' },
+            totalInventoryValueUSD: { $sum: '$totalUSD' },
+            totalProducts: { $sum: 1 }
+          }
+        }
+      ]),
+      Transaction.find({ store: storeRegex, type: 'sale' }),
+      Credit.find({ store: storeRegex, status: 'Pending' })
     ]);
 
-    // Calculate inventory summary
-    const totalProducts = products.length;
-    let totalInventoryValueLRD = 0;
-    let totalInventoryValueUSD = 0;
-    products.forEach(product => {
-      const quantity = product.quantityInStock || 0;
-      const priceLRD = product.sellingPriceLRD || 0;
-      const priceUSD = product.sellingPriceUSD || 0;
-      totalInventoryValueLRD += quantity * priceLRD;
-      totalInventoryValueUSD += quantity * priceUSD;
-    });
+    const summary = inventorySummary[0] || { totalInventoryValueLRD: 0, totalInventoryValueUSD: 0, totalProducts: 0 };
 
     // Calculate total sales
-    let totalSalesLRD = 0;
-    let totalSalesUSD = 0;
-    transactions.forEach(transaction => {
-      totalSalesLRD += transaction.totalLRD || 0;
-      totalSalesUSD += transaction.totalUSD || 0;
-    });
+    const totalSalesLRD = transactions.reduce((sum, t) => sum + (t.totalLRD || 0), 0);
+    const totalSalesUSD = transactions.reduce((sum, t) => sum + (t.totalUSD || 0), 0);
 
     // Calculate pending credit
-    let pendingCreditLRD = 0;
-    let pendingCreditUSD = 0;
-    pendingCredits.forEach(credit => {
-      pendingCreditLRD += credit.totalLRD || 0;
-      pendingCreditUSD += credit.totalUSD || 0;
-    });
+    const pendingCreditLRD = pendingCredits.reduce((sum, c) => sum + (c.totalLRD || 0), 0);
+    const pendingCreditUSD = pendingCredits.reduce((sum, c) => sum + (c.totalUSD || 0), 0);
     const pendingCreditCount = pendingCredits.length;
 
     res.json({
-      totalInventoryValueLRD,
-      totalInventoryValueUSD,
+      totalInventoryValueLRD: summary.totalInventoryValueLRD,
+      totalInventoryValueUSD: summary.totalInventoryValueUSD,
+      totalProducts: summary.totalProducts,
       totalSalesLRD,
       totalSalesUSD,
-      totalProducts,
       pendingCreditLRD,
       pendingCreditUSD,
       pendingCreditCount,
