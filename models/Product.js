@@ -15,7 +15,6 @@ const productSchema = new mongoose.Schema({
   barcode: { type: String },
   totalLRD: { type: Number },
   totalUSD: { type: Number },
-  barcode: { type: String },
   store: {
     type: String,
     required: true,

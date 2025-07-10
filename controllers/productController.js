@@ -1,5 +1,6 @@
 const Product = require('../models/Product');
 const Transaction = require('../models/Transaction');
+const Credit = require('../models/Credit');
 
 const createProduct = async (req, res) => {
   try {
@@ -76,22 +77,17 @@ const getProducts = async (req, res) => {
       return res.status(400).json({ error: 'Store parameter is required' });
     }
 
-    // Build query
     const query = { store };
-    
-    // Add low stock filter if requested
+
     if (lowStock) {
       query.quantityInStock = { $lte: 7 };
     }
 
-    // Add barcode filter if provided
     if (barcode) {
       query.barcode = barcode;
     }
 
-    // Add search functionality
     if (search) {
-      // Create a case-insensitive search across multiple fields
       query.$or = [
         { itemID: { $regex: search, $options: 'i' } },
         { productName: { $regex: search, $options: 'i' } },
@@ -101,61 +97,27 @@ const getProducts = async (req, res) => {
       ];
     }
 
-    // Get total count for pagination with store filter
     const totalCount = await Product.countDocuments(query);
     const totalPages = Math.ceil(totalCount / limit);
 
-    // Get paginated products for specific store
     const products = await Product.find(query)
       .sort({ createdAt: -1 })
-      .skip(lowStock || barcode ? 0 : skip) // Skip pagination for low stock items or barcode search
-      .limit(lowStock || barcode ? 100 : limit); // Use higher limit for low stock items or barcode search
-    
-    // Get transactions for each product to calculate totals
-    const productsWithTotals = await Promise.all(products.map(async (product) => {
-      const transactions = await Transaction.find({
-        'productsSold.product': product._id,
-        type: 'sale'
-      });
-
-      let totalSalesLRD = 0;
-      let totalSalesUSD = 0;
-      let totalQuantitySold = 0;
-
-      transactions.forEach(transaction => {
-        const productSold = transaction.productsSold.find(
-          p => p.product.toString() === product._id.toString()
-        );
-        if (productSold) {
-          totalQuantitySold += productSold.quantity;
-          if (transaction.currency === 'LRD') {
-            totalSalesLRD += productSold.quantity * productSold.sellingPriceLRD;
-          } else {
-            totalSalesUSD += productSold.quantity * productSold.sellingPriceUSD;
-          }
-        }
-      });
-
-      return {
-        ...product.toObject(),
-        totalSalesLRD,
-        totalSalesUSD,
-        totalQuantitySold
-      };
-    }));
+      .skip(lowStock || barcode ? 0 : skip)
+      .limit(lowStock || barcode ? 100 : limit);
 
     res.json({
-      products: productsWithTotals,
+      products: products,
       pagination: {
         currentPage: page,
         totalPages,
+        totalItems: totalCount,
         hasNextPage: page < totalPages,
         hasPrevPage: page > 1,
-        totalItems: totalCount
-      }
+      },
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error in getProducts:', error);
+    res.status(500).json({ error: 'Failed to get products', details: error.message });
   }
 };
 
@@ -340,111 +302,60 @@ const deleteAllProducts = async (req, res) => {
 
 const getInventorySummary = async (req, res) => {
   try {
-    const { store } = req.query;
-
+    const store = req.query.store ? req.query.store.trim() : null;
     if (!store) {
       return res.status(400).json({ error: 'Store parameter is required' });
     }
 
-    // Get all products for the store
-    const products = await Product.find({ store });
-    
-    // Log the query and results for debugging
-    console.log(`Inventory summary for store: ${store}`);
-    console.log(`Found ${products.length} products`);
-    
-    // Calculate inventory totals
-    let totalInventoryLRD = 0;
-    let totalInventoryUSD = 0;
-    let totalItems = products.length;
-    
+    // Fetch all data in parallel
+    const [products, transactions, pendingCredits] = await Promise.all([
+      Product.find({ store: { $regex: new RegExp(`^${store}$`, 'i') } }),
+      Transaction.find({ store, type: 'sale' }),
+      Credit.find({ store, status: 'Pending' })
+    ]);
+
+    // Calculate inventory summary
+    const totalProducts = products.length;
+    let totalInventoryValueLRD = 0;
+    let totalInventoryValueUSD = 0;
     products.forEach(product => {
-      if (product.totalLRD) {
-        totalInventoryLRD += product.totalLRD;
-      } else if (product.quantityInStock && product.unitCost) {
-        totalInventoryLRD += product.quantityInStock * product.unitCost;
-      }
-      
-      if (product.totalUSD) {
-        totalInventoryUSD += product.totalUSD;
-      } else if (product.quantityInStock && product.unitCost) {
-        totalInventoryUSD += product.quantityInStock * product.unitCost;
-      }
+      const quantity = product.quantityInStock || 0;
+      const priceLRD = product.sellingPriceLRD || 0;
+      const priceUSD = product.sellingPriceUSD || 0;
+      totalInventoryValueLRD += quantity * priceLRD;
+      totalInventoryValueUSD += quantity * priceUSD;
     });
-    
-    // Get all sales transactions for the store
-    const salesTransactions = await Transaction.find({ 
-      store,
-      type: 'sale'
-    }).populate('productsSold.product');
-    
-    // Get all return transactions for the store
-    const returnTransactions = await Transaction.find({
-      store,
-      type: 'return'
-    }).populate('productsSold.product');
-    
-    // Calculate sales totals
+
+    // Calculate total sales
     let totalSalesLRD = 0;
     let totalSalesUSD = 0;
-    
-    // Add sales
-    salesTransactions.forEach(transaction => {
-      // If the transaction has a totalLRD or totalUSD field, use that directly
-      if (transaction.currency === 'LRD' && transaction.totalLRD) {
-        totalSalesLRD += transaction.totalLRD;
-      } else if (transaction.currency === 'USD' && transaction.totalUSD) {
-        totalSalesUSD += transaction.totalUSD;
-      } else {
-        // Otherwise calculate from the productsSold array
-        transaction.productsSold.forEach(item => {
-          if (transaction.currency === 'LRD') {
-            // Use the price field if available, otherwise calculate from priceAtSale
-            const price = item.sellingPriceLRD || item.priceAtSale?.LRD || 0;
-            totalSalesLRD += item.quantity * price;
-          } else {
-            const price = item.sellingPriceUSD || item.priceAtSale?.USD || 0;
-            totalSalesUSD += item.quantity * price;
-          }
-        });
-      }
+    transactions.forEach(transaction => {
+      totalSalesLRD += transaction.totalLRD || 0;
+      totalSalesUSD += transaction.totalUSD || 0;
     });
-    
-    // Subtract returns
-    returnTransactions.forEach(transaction => {
-      // If the transaction has a totalLRD or totalUSD field, use that directly
-      if (transaction.currency === 'LRD' && transaction.totalLRD) {
-        totalSalesLRD -= transaction.totalLRD;
-      } else if (transaction.currency === 'USD' && transaction.totalUSD) {
-        totalSalesUSD -= transaction.totalUSD;
-      } else {
-        // Otherwise calculate from the productsSold array (which contains returned products)
-        transaction.productsSold.forEach(item => {
-          if (transaction.currency === 'LRD') {
-            // Use the price field if available, otherwise calculate from priceAtSale
-            const price = item.sellingPriceLRD || item.priceAtSale?.LRD || 0;
-            totalSalesLRD -= item.quantity * price;
-          } else {
-            const price = item.sellingPriceUSD || item.priceAtSale?.USD || 0;
-            totalSalesUSD -= item.quantity * price;
-          }
-        });
-      }
+
+    // Calculate pending credit
+    let pendingCreditLRD = 0;
+    let pendingCreditUSD = 0;
+    pendingCredits.forEach(credit => {
+      pendingCreditLRD += credit.totalLRD || 0;
+      pendingCreditUSD += credit.totalUSD || 0;
     });
-    
-    // Ensure sales totals are not negative
-    totalSalesLRD = Math.max(0, totalSalesLRD);
-    totalSalesUSD = Math.max(0, totalSalesUSD);
-    
+    const pendingCreditCount = pendingCredits.length;
+
     res.json({
-      totalInventoryLRD,
-      totalInventoryUSD,
+      totalInventoryValueLRD,
+      totalInventoryValueUSD,
       totalSalesLRD,
       totalSalesUSD,
-      totalItems
+      totalProducts,
+      pendingCreditLRD,
+      pendingCreditUSD,
+      pendingCreditCount,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error in getInventorySummary:', error);
+    res.status(500).json({ error: 'Failed to get inventory summary', details: error.message });
   }
 };
 
