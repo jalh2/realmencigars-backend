@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { createProduct, getProducts, getProductById, updateProduct, deleteProduct, deleteAllProducts, getInventorySummary, bulkUpdateProducts, bulkCreateProducts } = require('../controllers/productController');
 const upload = require('../middleware/upload');
+const { protect } = require('../middleware/authMiddleware');
 
 // Product routes will be added here
 

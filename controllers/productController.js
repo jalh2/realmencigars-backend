@@ -1,6 +1,7 @@
 const Product = require('../models/Product');
 const Transaction = require('../models/Transaction');
 const Credit = require('../models/Credit');
+const asyncHandler = require('express-async-handler');
 
 const createProduct = async (req, res) => {
   try {
@@ -31,37 +32,58 @@ const createProduct = async (req, res) => {
   }
 };
 
-const bulkCreateProducts = async (req, res) => {
-  try {
-    const productsData = req.body; // Array of product objects
+const bulkCreateProducts = asyncHandler(async (req, res) => {
+  const { products } = req.body;
 
-    if (!Array.isArray(productsData) || productsData.length === 0) {
-      return res.status(400).json({ error: 'Request body must be an array of products.' });
-    }
-
-    const createdProducts = [];
-    for (const productData of productsData) {
-      // Ensure store is provided for each product
-      if (!productData.store) {
-        throw new Error('Store is required for all products');
-      }
-
-      // Create a new product instance and save
-      const product = new Product(productData);
-      await product.save();
-      createdProducts.push(product);
-    }
-
-    res.status(201).json({
-      message: 'Products created successfully',
-      successCount: createdProducts.length,
-      products: createdProducts,
-    });
-  } catch (error) {
-    console.error('Error in bulkCreateProducts:', error);
-    res.status(400).json({ error: error.message || 'Failed to create products in bulk.' });
+  if (!products || products.length === 0) {
+    return res.status(400).json({ message: 'No products provided' });
   }
-};
+
+  // Ensure each product has a store property from the request body
+  for (const product of products) {
+    if (!product.store) {
+      return res.status(400).json({ 
+        message: 'Store is a required field for all products in the upload.',
+        offendingItem: product
+      });
+    }
+  }
+
+  let successCount = 0;
+  const errors = [];
+
+  try {
+    // Use insertMany for efficiency
+    const createdProducts = await Product.insertMany(products, { ordered: false });
+    successCount = createdProducts.length;
+  } catch (error) {
+    if (error.name === 'MongoBulkWriteError' && error.writeErrors) {
+      successCount = error.result.nInserted;
+      error.writeErrors.forEach(err => {
+        const itemID = err.op ? err.op.itemID : 'unknown';
+        errors.push({ 
+          message: `Failed to create product with itemID: ${itemID}. Error: ${err.errmsg}`,
+          details: err.err.errInfo
+        });
+      });
+    } else {
+      return res.status(500).json({ message: 'An unexpected error occurred during bulk creation.', error: error.message });
+    }
+  }
+
+  if (errors.length > 0) {
+    return res.status(207).json({ 
+      message: 'Bulk operation completed with some errors.',
+      successCount,
+      errors 
+    });
+  }
+
+  res.status(201).json({ 
+    message: 'All products created successfully',
+    successCount
+  });
+});
 
 const getProducts = async (req, res) => {
   try {

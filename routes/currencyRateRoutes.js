@@ -5,41 +5,23 @@ const mongoose = require('mongoose');
 const CurrencyRate = require('../models/CurrencyRate');
 
 // Middleware to provide fallback currency rate after timeout
-const provideFallbackCurrencyRate = (req, res) => {
-  console.log('Providing fallback currency rate');
+const provideFallbackCurrencyRate = (res, message) => {
+  if (res.headersSent) {
+    console.error('Headers already sent, cannot provide fallback. Reason:', message);
+    return;
+  }
+  console.log('Providing fallback currency rate. Reason:', message);
   res.status(200).json({ rate: 1.0, fallback: true });
 };
 
-// Middleware to handle timeouts and errors
-router.use('/', (req, res, next) => {
-  const originalSend = res.send;
-  const timeout = setTimeout(() => {
-    if (!res.headersSent) {
-      provideFallbackCurrencyRate(req, res);
-    }
-  }, 5000);
-  
-  res.send = function() {
-    clearTimeout(timeout);
-    return originalSend.apply(res, arguments);
-  };
-  
-  res.on('error', (err) => {
-    if (!res.headersSent) {
-      provideFallbackCurrencyRate(req, res);
-    }
-  });
-  
-  next();
-});
+
 
 // Get current currency rate
 router.get('/', async (req, res) => {
   try {
     // Check MongoDB connection state
     if (mongoose.connection.readyState !== 1) {
-      console.log('MongoDB not connected, providing fallback currency rate');
-      return provideFallbackCurrencyRate(req, res);
+      return provideFallbackCurrencyRate(res, 'MongoDB not connected');
     }
     
     let rateDoc = await CurrencyRate.findOne().sort({ updatedAt: -1 });
@@ -63,7 +45,7 @@ router.get('/', async (req, res) => {
     res.status(200).json({ rate: responseRate, updatedAt: rateDoc ? rateDoc.updatedAt : new Date() });
   } catch (error) {
     console.error('Error fetching currency rate:', error);
-    provideFallbackCurrencyRate(req, res);
+    provideFallbackCurrencyRate(res, error.message);
   }
 });
 
