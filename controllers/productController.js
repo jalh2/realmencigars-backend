@@ -32,6 +32,49 @@ const createProduct = async (req, res) => {
   }
 };
 
+const getLowStockProducts = async (req, res) => {
+  try {
+    const { store } = req.query;
+
+    if (!store) {
+      return res.status(400).json({ error: 'Store parameter is required' });
+    }
+
+    const lowStockProducts = await Product.find({
+      store: store,
+      $expr: { $lte: ["$quantityInStock", "$restockLevel"] }
+    }).sort({ createdAt: -1 });
+
+    res.json(lowStockProducts);
+  } catch (error) {
+    console.error('Error in getLowStockProducts:', error);
+    res.status(500).json({ 
+      message: 'An error occurred while fetching low stock products.',
+      error: error.message 
+    });
+  }
+};
+
+const getAllProducts = async (req, res) => {
+  try {
+    const { store } = req.query;
+
+    if (!store) {
+      return res.status(400).json({ error: 'Store parameter is required' });
+    }
+
+    const products = await Product.find({ store: store }).sort({ createdAt: -1 });
+    
+    res.json(products);
+  } catch (error) {
+    console.error('Error in getAllProducts:', error);
+    res.status(500).json({ 
+      message: 'An error occurred while fetching all products.',
+      error: error.message 
+    });
+  }
+};
+
 const bulkCreateProducts = asyncHandler(async (req, res) => {
   const { products } = req.body;
 
@@ -448,7 +491,9 @@ const bulkUpdateProducts = async (req, res) => {
 };
 
 module.exports = {
+  getLowStockProducts,
   createProduct,
+  bulkCreateProducts,
   getProducts,
   getProductById,
   updateProduct,
@@ -457,5 +502,5 @@ module.exports = {
   deleteAllProducts,
   getInventorySummary,
   bulkUpdateProducts,
-  bulkCreateProducts
+  getAllProducts
 };
