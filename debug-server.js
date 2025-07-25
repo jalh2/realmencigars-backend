@@ -174,7 +174,7 @@ app.get('*', (req, res) => {
 });
 
 // Connect to MongoDB
-const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/firestonestor';
+const mongoUri = process.env.MONGODB_URI;
 log(`Attempting to connect to MongoDB at: ${mongoUri}`);
 
 mongoose.connect(mongoUri, {

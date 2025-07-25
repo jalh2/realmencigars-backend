@@ -77,6 +77,12 @@ userSchema.pre('save', function(next) {
 
 // Method to compare password
 userSchema.methods.comparePassword = function(candidatePassword) {
+  // If salt doesn't exist, this is a legacy user with a plain-text password.
+  if (!this.salt) {
+    return this.password === candidatePassword;
+  }
+
+  // For users with a salt, perform the secure hash comparison.
   const hash = crypto
     .pbkdf2Sync(candidatePassword, this.salt, 1000, 64, 'sha512')
     .toString('hex');
