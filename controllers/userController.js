@@ -75,32 +75,39 @@ const registerUser = async (req, res) => {
 const loginUser = async (req, res) => {
   try {
     const { username, password, store } = req.body;
+    console.log('Login attempt:', { username, store }); // Log attempt
 
     // Find user by username and store combination
     const user = await User.findOne({ username, store });
     if (!user) {
+      console.log(`User not found for username: ${username} in store: ${store}`); // Log user not found
       return res.status(400).json({ error: 'User not found for this store' });
     }
+    console.log('User found:', user.username); // Log user found
 
     // Check password using the comparePassword method from our schema
     const isMatch = user.comparePassword(password);
+    console.log('Password match result:', isMatch); // Log password match result
     if (!isMatch) {
+      console.log('Invalid password for user:', username); // Log invalid password
       return res.status(400).json({ error: 'Invalid password' });
     }
 
+    console.log('Login successful for user:', username); // Log success
     res.json({ 
       username: user.username,
       accessibleRoutes: user.accessibleRoutes,
       store: user.store
     });
   } catch (error) {
+    console.error('Login error:', error); // Log any unexpected errors
     res.status(500).json({ error: error.message });
   }
 };
 
 const getUsers = async (req, res) => {
   try {
-    const users = await User.find({}, 'username accessibleRoutes store');
+    const users = await User.find({});
     res.json(users);
   } catch (error) {
     res.status(500).json({ error: error.message });
